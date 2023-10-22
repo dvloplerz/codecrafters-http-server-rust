@@ -4,9 +4,9 @@ use std::net::TcpListener;
 use request::request;
 
 fn main() {
-    // println!("Logs from your program will appear here!");
+    println!("Logs from your program will appear here!");
     let listener = TcpListener::bind("127.0.0.1:4221").unwrap();
-    let _ = request(listener);
+    request(listener).ok();
 }
 
 pub mod error {
@@ -141,11 +141,17 @@ pub mod request {
             let mut stream = stream?;
             let _ = stream.read(&mut buffer);
             let buffers = std::str::from_utf8(&buffer)?;
-            dbg!(buffers);
-            let mut sp_str = buffers.split_whitespace();
+
+            let mut headers = buffers.split("\r\n");
+
+            let mut sp_str = headers.next().unwrap().split_whitespace();
             let _method: Method =
                 sp_str.next().ok_or(Error::InvalidMethod)?.parse()?;
             let _path = sp_str.next().unwrap();
+
+            let _host = headers.next().unwrap();
+
+            let _user_agent = headers.next().unwrap();
 
             if _path == "/" {
                 let _ = Response::new(HttpStatus::OK, None).send(&mut stream);
@@ -155,22 +161,15 @@ pub mod request {
 
                 let _ =
                     Response::new(HttpStatus::OK, Some(echo)).send(&mut stream);
+            } else if _path == "/user-agent" {
+                let ua = _user_agent.split_whitespace().collect::<Vec<_>>()[1]
+                    .to_string();
+                let _ =
+                    Response::new(HttpStatus::OK, Some(ua)).send(&mut stream);
             } else {
                 let _ =
                     Response::new(HttpStatus::NotFound, None).send(&mut stream);
             }
-
-            // if _path == "/" {
-            //     stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
-            // }
-            // if _path.contains("/echo") {
-            //     let echo =
-            //         _path.split("/echo/").collect::<Vec<_>>()[1].to_string();
-
-            //     let _ = stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}", echo.len(), echo).as_bytes());
-            // } else {
-            //     stream.write_all(b"HTTP/1.1 404 Not Found\r\n\r\n").unwrap();
-            // }
         }
         Ok(())
     }
