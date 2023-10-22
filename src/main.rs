@@ -14,7 +14,7 @@ fn main() {
         match stream {
             Ok(mut _stream) => {
                 println!("accepted new connection");
-                write!(&mut _stream, "HTTP/1.1 200 OK\r\n\r\n");
+                write!(&mut _stream, "HTTP/1.1 200 OK\r\n\r\n").unwrap();
             }
             Err(e) => {
                 println!("error: {}", e);
