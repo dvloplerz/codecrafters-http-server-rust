@@ -141,6 +141,7 @@ pub mod request {
             let mut stream = stream?;
             let _ = stream.read(&mut buffer);
             let buffers = std::str::from_utf8(&buffer)?;
+            dbg!(buffers);
             let mut sp_str = buffers.split_whitespace();
             let _method: Method =
                 sp_str.next().ok_or(Error::InvalidMethod)?.parse()?;
