@@ -10,16 +10,21 @@ fn main() {
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
+                let mut buffer: [u8; 1024] = [0; 1024];
                 println!("accepted new connection");
-                match stream.read(&mut [0; 128]) {
-                    Ok(r) => {
-                        println!("{r}");
-                        stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
-                    }
-                    Err(e) => {
-                        println!("{}", e);
-                    }
+                let _ = stream.read(&mut buffer);
+                let to_str = std::str::from_utf8(&buffer).unwrap();
+                let mut sp_str = to_str.split_whitespace();
+                let method = sp_str.next().unwrap();
+                let path = sp_str.next().unwrap();
+                if path != "/" {
+                    stream.write_all(b"HTTP/1.1 404 Not Found\r\n\r\n")
+                          .unwrap();
+                } else {
+                    stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
                 }
+                dbg!(&method);
+                dbg!(&path);
             }
             Err(e) => println!("error: {}", e),
         };
