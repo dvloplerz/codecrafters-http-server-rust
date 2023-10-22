@@ -15,16 +15,27 @@ fn main() {
                 let _ = stream.read(&mut buffer);
                 let to_str = std::str::from_utf8(&buffer).unwrap();
                 let mut sp_str = to_str.split_whitespace();
-                let method = sp_str.next().unwrap();
-                let path = sp_str.next().unwrap();
-                if path != "/" {
-                    stream.write_all(b"HTTP/1.1 404 Not Found\r\n\r\n")
-                          .unwrap();
-                } else {
-                    stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
+                let _method = sp_str.next().unwrap();
+                let _path = sp_str.next().unwrap();
+                match _path {
+                    "/" => {
+                        stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
+                    }
+                    _ => {
+                        if _path.contains("/echo") {
+                            let echo = _path.split("/echo/")
+                                            .collect::<Vec<_>>()[1]
+                                                                   .to_string();
+
+                            println!("{:?}", echo);
+                            let _ = stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}", echo.len(), echo).as_bytes());
+                        } else {
+                            // println!("NO!");
+                            stream.write_all(b"HTTP/1.1 404 Not Found\r\n\r\n")
+                                  .unwrap();
+                        }
+                    }
                 }
-                dbg!(&method);
-                dbg!(&path);
             }
             Err(e) => println!("error: {}", e),
         };
