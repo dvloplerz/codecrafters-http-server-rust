@@ -1,6 +1,7 @@
 #![allow(unused)]
 use std::fs;
-use std::io::BufReader;
+use std::io::{BufReader, Read};
+use std::net::TcpStream;
 use std::path::Path;
 // Uncomment this block to pass the first stage
 // use std::net::TcpListener;
@@ -13,18 +14,19 @@ use std::string::String;
 fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     println!("Logs from your program will appear here!");
-    let listener = TcpListener::bind("127.0.0.1:4221")
-        .expect("Cannot bind to Address or Port.");
+    const ADDR: &str = "127.0.0.1:4221";
+    let listener =
+        TcpListener::bind(ADDR).expect("Cannot bind to Address or Port.");
+
+    let mut connector = TcpStream::connect(ADDR).unwrap();
+    let ss = connector.read(&mut [0; 2048]).unwrap();
+    dbg!(&ss);
 
     let args: Vec<_> = std::env::args().collect();
     let dir: Directory = if args.len() > 1 && args[1].contains("directory") {
-        Directory {
-            path: args[2].to_string(),
-        }
+        Directory { path: args[2].to_string() }
     } else {
-        Directory {
-            path: "".to_string(),
-        }
+        Directory { path: "".to_string() }
     };
 
     for stream in listener.incoming() {
@@ -40,25 +42,47 @@ pub struct Directory {
 }
 
 pub mod handler {
-    use crate::Directory;
     use std::{
         io::{prelude::*, BufReader},
         net::TcpStream,
         path::Path,
         fs, env,
+        str::FromStr,
     };
     use crate::{
         http_status::HttpStatus,
         response::{Response, ContentType},
+        handler,
     };
+
+    enum Method {
+        Get,
+        Post,
+        Put,
+        Delete,
+    }
+
+    impl FromStr for Method {
+        // add code here
+        type Err = anyhow::Error;
+        fn from_str(s: &str) -> anyhow::Result<Self> {
+            match s {
+                "GET" => Ok(Self::Get),
+                "POST" => Ok(Self::Post),
+                "PUT" => Ok(Self::Put),
+                "DELETE" => Ok(Self::Delete),
+                _ => panic!("something went wrong. "),
+            }
+        }
+    }
 
     pub fn handle_connection(dir: String, mut stream: TcpStream) {
         let buf_reader = BufReader::new(&mut stream);
-        let http_request: Vec<_> = buf_reader
-            .lines()
-            .map(|result| result.unwrap())
-            .take_while(|line| !line.is_empty())
-            .collect();
+        let http_request: Vec<_> =
+            buf_reader.lines()
+                      .map(|result| result.unwrap())
+                      .take_while(|line| !line.is_empty())
+                      .collect();
 
         let mut request_clone = http_request.clone();
         if request_clone.is_empty() {
@@ -69,66 +93,81 @@ pub mod handler {
         let _request_info =
             extract_request(request_clone.first().unwrap_or(&fallback));
 
-        let _method = _request_info.0;
+        let method: handler::Method = _request_info.0.parse().unwrap();
         let path = _request_info.1;
 
-        match extract_path(path)[0] {
-            "" => {
-                Response::new(HttpStatus::OK, ContentType::Plain, None)
-                    .send(&mut stream);
-            }
-            "echo" => {
-                let response_body =
-                    extract_path(path)[1..].join("/").to_string();
-                Response::new(
-                    HttpStatus::OK,
-                    ContentType::Plain,
-                    Some(response_body),
-                )
-                .send(&mut stream);
-            }
-            "user-agent" => {
-                let user_agent = request_clone
-                    .iter()
-                    .filter(|v| v.contains("User-Agent"))
-                    .collect::<Vec<_>>()[0]
-                    .as_str()
-                    .split_whitespace()
-                    .collect::<Vec<_>>()[1]
-                    .to_string();
-                Response::new(
-                    HttpStatus::OK,
-                    ContentType::Plain,
-                    Some(user_agent),
-                )
-                .send(&mut stream);
-            }
-            "files" => {
-                let path = &extract_path(path)[1..];
-                let file_path = format!("{}{}", dir, path.join("/"));
-                let file = Path::new(&file_path);
-
-                if file.exists() {
-                    let response = std::fs::read_to_string(file)
-                        .unwrap_or("Cannot Read file.".to_string());
-
-                    Response::new(
-                        HttpStatus::OK,
-                        ContentType::OctetStream,
-                        Some(response.to_string()),
-                    )
-                    .send(&mut stream);
-                } else {
-                    Response::new(
-                        HttpStatus::NotFound,
-                        ContentType::Plain,
-                        None,
-                    )
-                    .send(&mut stream)
+        match method {
+            Method::Get => match extract_path(path)[0] {
+                "" => {
+                    Response::new(HttpStatus::OK, ContentType::Plain, None)
+                        .send(&mut stream);
                 }
+                "echo" => {
+                    let response_body =
+                        extract_path(path)[1..].join("/").to_string();
+                    Response::new(HttpStatus::OK,
+                                  ContentType::Plain,
+                                  Some(response_body)).send(&mut stream);
+                }
+                "user-agent" => {
+                    let user_agent = request_clone
+                        .iter()
+                        .filter(|v| v.contains("User-Agent"))
+                        .collect::<Vec<_>>()[0]
+                        .as_str()
+                        .split_whitespace()
+                        .collect::<Vec<_>>()[1]
+                        .to_string();
+                    Response::new(HttpStatus::OK,
+                                  ContentType::Plain,
+                                  Some(user_agent)).send(&mut stream);
+                }
+                "files" => {
+                    let path = &extract_path(path)[1..];
+                    let file_path = format!("{}{}", dir, path.join("/"));
+                    let file = Path::new(&file_path);
+
+                    if file.exists() {
+                        let response = std::fs::read_to_string(file)
+                            .unwrap_or("Cannot Read file.".to_string());
+
+                        Response::new(
+                            HttpStatus::OK,
+                            ContentType::OctetStream,
+                            Some(response.to_string()),
+                        )
+                        .send(&mut stream);
+                    } else {
+                        Response::new(HttpStatus::NotFound,
+                                      ContentType::Plain,
+                                      None).send(&mut stream)
+                    }
+                }
+                _ => Response::new(HttpStatus::NotFound,
+                                   ContentType::Plain,
+                                   None).send(&mut stream),
+            },
+            Method::Post => match extract_path(path)[0] {
+                "files" => {
+                    let path = &extract_path(path)[1..];
+                    let file_path = format!("{}{}", dir, path.join("/"));
+                    let file = Path::new(&file_path);
+
+                    let post = request_clone;
+                    let ct = http_request;
+                }
+                _ => Response::new(HttpStatus::NotFound,
+                                   ContentType::Plain,
+                                   None).send(&mut stream),
+            },
+            Method::Put => {
+                Response::new(HttpStatus::NotFound, ContentType::Plain, None)
+                    .send(&mut stream);
             }
-            _ => Response::new(HttpStatus::NotFound, ContentType::Plain, None)
-                .send(&mut stream),
+            Method::Delete => {
+                Response::new(HttpStatus::NotFound, ContentType::Plain, None)
+                    .send(&mut stream);
+            }
         }
     }
 
@@ -193,16 +232,13 @@ pub mod response {
     }
 
     impl Response {
-        pub fn new(
-            http_status: HttpStatus,
-            response_type: ContentType,
-            body: Option<String>,
-        ) -> Self {
-            Self {
-                http_status,
-                response_type,
-                body,
-            }
+        pub fn new(http_status: HttpStatus,
+                   response_type: ContentType,
+                   body: Option<String>)
+                   -> Self {
+            Self { http_status,
+                   response_type,
+                   body }
         }
 
         pub fn send(&self, stream: &mut TcpStream) {
@@ -218,9 +254,8 @@ pub mod response {
                 self.http_status, self.response_type, body_length, body
             );
 
-            stream
-                .write_all(response.as_bytes())
-                .expect("Cannot Write to stream.");
+            stream.write_all(response.as_bytes())
+                  .expect("Cannot Write to stream.");
         }
     }
 }
