@@ -3,6 +3,7 @@
 use std::net::TcpListener;
 
 use crate::handler::handle_connection;
+use std::thread::spawn;
 
 fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -13,7 +14,7 @@ fn main() {
     for stream in listener.incoming() {
         let stream = stream.expect("TcpStream Error.");
 
-        handle_connection(stream);
+        spawn(move || handle_connection(stream));
     }
 }
 
@@ -32,10 +33,14 @@ pub mod handler {
                       .take_while(|line| !line.is_empty())
                       .collect();
 
-        let request_clone = http_request.clone();
+        let mut request_clone = http_request.clone();
+        if request_clone.is_empty() {
+            request_clone = vec!["".to_string(), "".to_string()];
+        }
 
+        let fallback = String::from("/");
         let _request_info =
-            extract_request(request_clone.first().unwrap().as_str());
+            extract_request(request_clone.first().unwrap_or(&fallback));
 
         let _method = _request_info.0;
         let path = _request_info.1;
